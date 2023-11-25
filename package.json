@@ -1,17 +1,24 @@
 {
   "name": "cosmos-faucet",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "",
-  "main": "app.js",
   "type": "module",
+  "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
-  "author": "",
+  "author": "atmon3r",
   "license": "ISC",
   "dependencies": {
-    "@cosmostation/cosmosjs": "^0.10",
-    "express": "^4.17.1"
+    "@cosmjs/proto-signing": "^0.32.0",
+    "@cosmjs/stargate": "^0.32.0",
+    "axios": "^1.6.2",
+    "bech32": "^2.0.0",
+    "express": "^4.18.2",
+    "fs": "^0.0.1-security",
+    "path": "^0.12.7",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.0"
   }
 }

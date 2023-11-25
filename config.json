@@ -1,13 +1,15 @@
 {
-        "mnemonic":"one flight badge two kiwi adapt snap arrest make blast three wet...",
-        "chainId":"bitcanna-testnet-1", 
-        "lcdUrl":"https://cosmos-testnet.bitcanna.io",
-        "denom":"ubcna",
-        "prefix":"bcna",
-        "feeAmount":5000,
-        "AmountSend":1000000,
-        "memo":"Sent using Cosmostation-CosmoJS ;-)",
-        "lport":8000,
-        "gasLimit":200000
-
-}
+  "name": "Bitcanna Testnet",
+  "mnemonic": "",
+  "chainId": "bitcanna-dev-1", 
+  "lcdUrl": "https://lcd-testnet.bitcanna.io",
+  "rpcUrl": "https://rpc-testnet.bitcanna.io",
+  "denom": "ubcna",
+  "prefix": "bcna",
+  "gasPrice": 0.075,
+  "faucetAmount": 1000000,
+  "memo": "Faucet from cosmos-faucet",
+  "enableUi": false,
+  "enableSwagger": true,
+  "dappPort": "3000"
+} 
