@@ -1,96 +1,161 @@
-/************************************/
-/* Dev by atmon3r for Bitcanna Team */ 
-/* Run: node --experimental-modules --es-module-specifier-resolution=node app.js */
-/************************************/
-
 import fs from 'fs';
+import axios from 'axios'; 
 import express from 'express';
-import bodyParser from 'body-parser';
-import { Cosmos } from "@cosmostation/cosmosjs";
-import message from "@cosmostation/cosmosjs/src/messages/proto.js";
+import path from 'path';
+import { fileURLToPath } from 'url';
+import swaggerJsdoc from "swagger-jsdoc";
+import { serve, setup } from "swagger-ui-express";
+import { DirectSecp256k1HdWallet, coin, coins } from "@cosmjs/proto-signing";
+import bech32 from "bech32";
+import pkg from '@cosmjs/stargate';
+const { assertIsDeliverTxSuccess, SigningStargateClient, defaultRegistryTypes, GasPrice } = pkg; 
+
+const app = express();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 let rawdata = fs.readFileSync('config.json');
 let config = JSON.parse(rawdata);
 
-// Cosmos config
-const mnemonic = config.mnemonic;
-const chainId = config.chainId;
-const lcdUrl = config.lcdUrl;
-const denom = config.denom;
-const cosmos = new Cosmos(lcdUrl, chainId);
-cosmos.setBech32MainPrefix(config.prefix);
-cosmos.setPath("m/44'/118'/0'/0/0");
-const address = cosmos.getAddress(mnemonic);
-const privKey = cosmos.getECPairPriv(mnemonic);
-const pubKeyAny = cosmos.getPubKeyAny(privKey);
 
-// Express config
-const app = express()
-app.use(bodyParser.urlencoded({ extended: false }));
-
-function sendTx(addressTo,res) {
-	cosmos.getAccounts(address).then(data => {
-		// signDoc = (1)txBody + (2)authInfo
-		// ---------------------------------- (1)txBody ----------------------------------
-		const msgSend = new message.cosmos.bank.v1beta1.MsgSend({
-			from_address: address,
-			to_address: addressTo,
-			amount: [{ denom: denom, amount: String(config.AmountSend) }]		// 7 decimal places (1000000 ubcna = 1 BCNA)
-		});
-		
-		const msgSendAny = new message.google.protobuf.Any({
-			type_url: "/cosmos.bank.v1beta1.MsgSend",
-			value: message.cosmos.bank.v1beta1.MsgSend.encode(msgSend).finish()
-		});
-		
-		//console.log("msgSendAny: ", msgSendAny);
-		
-		const txBody = new message.cosmos.tx.v1beta1.TxBody({ messages: [msgSendAny], memo: config.memo });
-		
-		//console.log("txBody: ", txBody);
-		//return;
-		
-		// --------------------------------- (2)authInfo ---------------------------------
-		const signerInfo = new message.cosmos.tx.v1beta1.SignerInfo({
-			public_key: pubKeyAny,
-				mode_info: { single: { mode: message.cosmos.tx.signing.v1beta1.SignMode.SIGN_MODE_DIRECT } },
-				sequence: data.account.sequence
-		});
-		
-		const feeValue = new message.cosmos.tx.v1beta1.Fee({
-			amount: [{ denom: denom, amount: String(config.feeAmount) }],
-			gas_limit: config.gasLimit
-		});
-		
-		const authInfo = new message.cosmos.tx.v1beta1.AuthInfo({ signer_infos: [signerInfo], fee: feeValue });
-		
-		// -------------------------------- sign --------------------------------
-		const signedTxBytes = cosmos.sign(txBody, authInfo, data.account.account_number, privKey);
- 
-		return cosmos.broadcast(signedTxBytes).then(
-			function(response) {res.send({response}); console.log(response) }
-		);
- 
-	});
-	
+function checkBech32Address(address) {
+  try {
+    bech32.decode(address);
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+function checkBech32Prefix(address) {
+  try {
+    const { prefix } = bech32.decode(address); 
+    if (prefix === config.prefix) {
+      return true;
+    } 
+  } catch (error) {
+    return false;
+  }
 }
 
-// Routing
-app.get('/', function (req, res) {
-	res.setHeader('Content-Type', 'application/json');
-	if (req.query.address === '') {
-		console.log(false)
-		res.send({error:'Already funded'});
-	} else {
-		var rtnTx = sendTx(req.query.address,res)
-		
-		console.log(req.query.address)		
-	}	
+app.get('/faucet/ui', async function(req, res) { 
+  if (config.enableUi) {
+    res.sendFile(path.join(__dirname, '/claim.html'));
+  } else {
+    res.status(403).send('Forbidden');
+  }
+  
+}) 
+
+app.get('/faucet/available', async function(req, res) { 
+  const wallet = await DirectSecp256k1HdWallet.fromMnemonic(config.mnemonic, { prefix: config.prefix });
+  const [firstAccount] = await wallet.getAccounts();
+
+  const account = await axios.get(config.lcdUrl + '/cosmos/bank/v1beta1/spendable_balances/' + firstAccount.address)  
+  let available = 0;
+  account.data.balances.forEach(function (balance) {
+    if (balance.denom == config.denom) {
+      available = balance.amount;
+    }
+  })
+  res.json({ 
+    available: available
+  })
+}) 
+
+app.get('/faucet/last-claim', async function(req, res) { 
+  const wallet = await DirectSecp256k1HdWallet.fromMnemonic(config.mnemonic, { prefix: config.prefix });
+  const [firstAccount] = await wallet.getAccounts();
+
+  const resultSender = await axios(
+    config.lcdUrl +
+      "/cosmos/tx/v1beta1/txs?events=message.sender=%27" +
+      firstAccount.address +
+      "%27&limit=10&order_by=2"
+  );
+  res.json({ 
+    lastclaim: resultSender.data
+  })
+}) 
+
+
+app.get('/faucet/claim/:address', async function(req, res) { 
+
+  let addressTo = req.params.address;   
+  if (!checkBech32Address(addressTo)) { 
+    res.status(403).json({ 
+      result: "Invalid address"
+    })
+    return;
+  }
+  
+  if (!checkBech32Prefix(addressTo)) { 
+    res.status(403).json({ 
+      result: "Invalid address prefix"
+    })
+    return;
+  }
+
+  const account = await axios.get(config.lcdUrl + '/cosmos/bank/v1beta1/spendable_balances/' + addressTo)
+  const found = account.data.balances.find((element) => element.denom === config.denom)
+
+  if (found.amount > 0) {
+    res.status(403).json({ 
+      result: "You already have funds"
+    })
+    return;
+  }
+ 
+  const wallet = await DirectSecp256k1HdWallet.fromMnemonic(config.mnemonic, { prefix: config.prefix });
+  const [firstAccount] = await wallet.getAccounts();
+  const client = await SigningStargateClient.connectWithSigner(config.rpcUrl, wallet, {
+    gasPrice: GasPrice.fromString(
+      config.gasPrice + config.denom
+    ) 
+  }); 
+
+  const foundMsgType = defaultRegistryTypes.find(
+    (element) => element[0] === "/cosmos.bank.v1beta1.MsgSend"
+  )
+
+  const finalMsg = {
+    typeUrl: foundMsgType[0],
+    value: foundMsgType[1].fromPartial({
+      "fromAddress": firstAccount.address,
+      "toAddress": addressTo,
+      "amount": coins(config.faucetAmount, config.denom)
+    }),
+  } 
+  const result = await client.signAndBroadcast(firstAccount.address, [finalMsg], "auto", "")
+  assertIsDeliverTxSuccess(result);
+
+  res.json({ 
+    result: result
+  })
 })
 
-app.listen(config.lport, function () {
-	console.log('***********************************************')
-	console.log('* Welcome on Cosmos-faucet')	
-	console.log('* Cosmos-faucet app listening on port '+config.lport)
-	console.log('**********************************************')
-})
+if (config.enableSwagger) {
+  // Swagger
+  const options = {
+    definition: { 
+      openapi: "3.1.0",
+      info: {
+        title: config.name + " faucet",
+        version: "0.1.0", 
+      }, 
+    },
+    apis: ["./routes/*.js"],
+  };
+
+  const specs = swaggerJsdoc(options);
+  app.use(
+    "/",
+    serve,
+    setup(specs, { explorer: false })
+  );  
+} 
+
+app.listen(config.dappPort, () => {
+  console.log(config.name + ` faucet app listening on port ${config.dappPort}`);
+}) 
+ 

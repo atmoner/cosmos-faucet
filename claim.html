@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  </head>
+  <style>
+    body {font-family: Arial, Helvetica, sans-serif;}
+    * {box-sizing: border-box;}
+    
+    input[type=text], select, textarea {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      box-sizing: border-box;
+      margin-top: 6px;
+      margin-bottom: 16px;
+      resize: vertical;
+    }
+    
+    input[type=submit] {
+      background-color: #04AA6D;
+      color: white;
+      padding: 12px 20px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    
+    input[type=submit]:hover {
+      background-color: #45a049;
+    }
+    
+    .container {
+      margin-left:auto;
+      margin-right:auto;
+      width: 500px;
+      border-radius: 5px;
+      background-color: #f2f2f2;
+      padding: 20px;
+    }
+
+    </style>
+<body>
+ 
+  <div class="container" id="app"> 
+      <label for="fname">Your address</label>
+      <input v-model="address" type="text" placeholder="You address">  
+      <input type="submit" value="Claim your faucet" @click="submitForm()"> 
+      <div >{{ message }}</div>
+  </div>
+  <script> 
+    const { createApp, ref } = Vue
+  
+    createApp({
+      setup() {
+        const message = ref('')
+        const address = ref('')
+        return {
+          message,
+          address
+        }
+      },
+      methods: {
+        submitForm() { 
+          fetch('/faucet/claim/' + this.address)
+            .then(response => response.json())
+            .then(data => {
+              console.log(data)
+              this.message = data.result
+            })
+            .catch(error => {
+              console.error(error)
+            })
+        }
+      }
+    }).mount('#app')
+  </script> 
+  </body>    
+</html>
+ 
