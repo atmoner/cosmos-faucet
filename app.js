@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 import swaggerJsdoc from "swagger-jsdoc";
 import { serve, setup } from "swagger-ui-express";
 import { DirectSecp256k1HdWallet, coin, coins } from "@cosmjs/proto-signing";
-import bech32 from "bech32";
+import { bech32 } from "bech32";
 import pkg from '@cosmjs/stargate';
 const { assertIsDeliverTxSuccess, SigningStargateClient, defaultRegistryTypes, GasPrice } = pkg; 
 
@@ -48,7 +48,7 @@ app.get('/faucet/ui', async function(req, res) {
 }) 
 
 app.get('/faucet/available', async function(req, res) { 
-  const wallet = await DirectSecp256k1HdWallet.fromMnemonic(config.mnemonic, { prefix: config.prefix });
+  const wallet = await DirectSecp256k1HdWallet.fromMnemonic(config.mnemonic, { prefix: config.prefix, path: "m/44'/118'/0'/0/0" });
   const [firstAccount] = await wallet.getAccounts();
 
   const account = await axios.get(config.lcdUrl + '/cosmos/bank/v1beta1/spendable_balances/' + firstAccount.address)  
@@ -78,33 +78,26 @@ app.get('/faucet/last-claim', async function(req, res) {
   })
 }) 
 
-
 app.get('/faucet/claim/:address', async function(req, res) { 
+  console.log("Request received for address:", req.params.address); // Verify address received
 
   let addressTo = req.params.address;   
-  if (!checkBech32Address(addressTo)) { 
+  if (!checkBech32Address(addressTo)) {
+    console.log("Invalid address detected:", addressTo); // Look if address is valid
     res.status(403).json({ 
       result: "Invalid address"
     })
     return;
-  }
-  
-  if (!checkBech32Prefix(addressTo)) { 
+  } 
+
+  if (!checkBech32Prefix(addressTo)) {
+    console.log("Invalid address prefix detected:", addressTo); // Look if preix is valid
     res.status(403).json({ 
       result: "Invalid address prefix"
     })
     return;
   }
 
-  const account = await axios.get(config.lcdUrl + '/cosmos/bank/v1beta1/spendable_balances/' + addressTo)
-  const found = account.data.balances.find((element) => element.denom === config.denom)
-
-  if (found.amount > 0) {
-    res.status(403).json({ 
-      result: "You already have funds"
-    })
-    return;
-  }
  
   const wallet = await DirectSecp256k1HdWallet.fromMnemonic(config.mnemonic, { prefix: config.prefix });
   const [firstAccount] = await wallet.getAccounts();
@@ -128,9 +121,9 @@ app.get('/faucet/claim/:address', async function(req, res) {
   } 
   const result = await client.signAndBroadcast(firstAccount.address, [finalMsg], "auto", "")
   assertIsDeliverTxSuccess(result);
-
+  console.log(result)
   res.json({ 
-    result: result
+    result: result.transactionHash
   })
 })
 
@@ -157,5 +150,4 @@ if (config.enableSwagger) {
 
 app.listen(config.dappPort, () => {
   console.log(config.name + ` faucet app listening on port ${config.dappPort}`);
-}) 
- 
+})
